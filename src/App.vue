@@ -6,9 +6,21 @@ import FluidCursor from './components/ui/fluid-cursor/FluidCursor.vue'
 import FallingStarsBg from './components/ui/bg-falling-stars/FallingStarsBg.vue'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
+const navigateTo = (path) => {
+  console.log("点击触发，接收到的路径是:", path); // 如果控制台没印出这行，说明点击事件没挂载成功
+  if (path) {
+    router.push(path);
+  } else {
+    console.error("错误：路径为空，无法跳转！"); // 如果印出这行，说明数据里的 path 没写对
+  }
+}
 
 const page2Links = [
-  { name: '学习', path: '/study' },
+  { name: '学习', path: '/learning' },
   { name: '音乐', path: '/music' },
   { name: '随笔', path: '/essays' },
   { name: '运动', path: '/sports' }
@@ -17,9 +29,9 @@ const page2Links = [
 const sectionCards = [
   {
     title: '学习',
+    path: '/learning',
     icon: 'mdi:book-open-variant',
     desc: '前端开发与前沿技术探索',
-    path: '/study',
     topPosts: [
       { title: 'Vue3 响应式原理深度解析' },
       { title: 'Vite 性能优化指南' },
@@ -28,9 +40,9 @@ const sectionCards = [
   },
   {
     title: '音乐',
+    path: '/music',
     icon: 'mdi:music',
     desc: '音律空间与个性化歌单',
-    path: '/music',
     topPosts: [
       { title: '最近在听：后摇的力量' },
       { title: '氛围音乐制作尝试' }
@@ -38,9 +50,9 @@ const sectionCards = [
   },
   {
     title: '随笔',
+    path: '/essays',
     icon: 'mdi:pencil-outline',
     desc: '灵感片段与生活随感',
-    path: '/essays',
     topPosts: [
       { title: '杭州的秋天与代码的秋天' },
       { title: '数字花园的构建思考' }
@@ -48,9 +60,9 @@ const sectionCards = [
   },
   {
     title: '运动',
+    path: '/sports',
     icon: 'mdi:run',
     desc: '力量训练与运动日志',
-    path: '/sports',
     topPosts: [
       { title: '深蹲 140kg 的突破之路' },
       { title: '复合动作训练周计划' }
@@ -179,7 +191,7 @@ const particlesOptions = {
           
           <CardContent class="flex-grow">
             <ul class="space-y-2 text-sm text-muted-foreground">
-              <li v-for="post in card.topPosts" :key="post.title" class="hover:text-[#00A3E0] transition-colors cursor-pointer">
+              <li v-for="post in card.topPosts" :key="post.title" @click="navigateTo(card.path)" class="hover:text-[#00A3E0] transition-colors cursor-pointer">
                 • {{ post.title }}
               </li>
             </ul>
@@ -189,6 +201,7 @@ const particlesOptions = {
             <Button 
               variant="outline" 
               class="w-full group-hover:bg-[#00A3E0] group-hover:text-white transition-all border-[#00A3E0] text-[#00A3E0]"
+              @click="navigateTo(card.path)"
             >
               进入板块
             </Button>
