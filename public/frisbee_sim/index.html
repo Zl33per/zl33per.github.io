@@ -6,7 +6,7 @@
   <title>飞盘战术设计</title>
   <link rel="stylesheet" href="app.css" />
 </head>
-<a href="/sports" class="back-to-sports-btn" title="回到运动中心">
+<a href="../#/sports" class="back-to-sports-btn">
   <span class="icon">🏃</span>
   <span class="text">返回中心</span>
 </a>
@@ -62,11 +62,12 @@
       <div class="modal__backdrop"></div>
       <div class="modal__card">
         <h3>播放设置</h3>
-        <label class="label">分叉路径（如 1.2.1 表示在各分叉点依次选第 1、2、1 条分支）</label>
-        <input type="text" id="playPathInput" class="text-input" placeholder="留空则使用分步选择" />
+        <label class="label">分叉路径（如 1.2.1 表示自动依次走第 1、2、1 条分支）</label>
+        <input type="text" id="playPathInput" class="text-input" placeholder="留空则在每个分叉处在画面上点选" autocomplete="off" />
+        <p class="play-path-hint" id="playPathHint" aria-live="polite"></p>
         <label class="checkbox-row">
           <input type="checkbox" id="playStepMode" />
-          <span>分步模式（每到分叉暂停，手动选分支）</span>
+          <span>强制分步（每到分叉都暂停选分支，忽略已填路径）</span>
         </label>
         <div class="speed-row">
           <label class="label" for="playSpeedSlider">回放速度 <span class="speed-value" id="playSpeedLabel">1.0×</span></label>
@@ -98,19 +99,27 @@
           </button>
           <button type="button" class="btn btn--secondary" id="btnFork" disabled>增加分叉</button>
           <button type="button" class="btn btn--secondary" id="btnEndBranch" disabled>结束该分叉</button>
+          <!-- btnExitForkUp kept for JS reference but hidden -->
+          <button type="button" class="btn btn--secondary" id="btnExitForkUp" hidden disabled>返回上一层</button>
           <button type="button" class="btn btn--secondary" id="btnSave" disabled>保存战术</button>
         </div>
         <div class="dock__row dock__row--play" id="playDockRow">
           <button type="button" class="btn btn--secondary" id="btnPlay" disabled>播放</button>
-          <button type="button" class="btn btn--ghost" id="btnStopPlay" disabled>停止播放</button>
+          <button type="button" class="btn btn--ghost" id="btnPausePlay" disabled>暂停</button>
+          <button type="button" class="btn btn--ghost" id="btnRewindOne" disabled title="回退一帧">回退</button>
+          <button type="button" class="btn btn--ghost" id="btnStopPlay" disabled>停止</button>
         </div>
         <p class="dock__hint" id="branchHint"></p>
       </div>
     </nav>
 
     <div class="fork-overlay" id="forkOverlay" hidden>
-      <p class="fork-overlay__title">选择分支继续播放</p>
-      <div class="fork-overlay__buttons" id="forkChoiceButtons"></div>
+      <div class="fork-card glass" role="dialog" aria-modal="true" aria-labelledby="forkBadge forkQuestion">
+        <p class="fork-overlay__badge" id="forkBadge">第 1 个分叉</p>
+        <p class="fork-overlay__question" id="forkQuestion">请选择要走哪一条分支？</p>
+        <p class="fork-overlay__options-hint" id="forkOptionsHint"></p>
+        <div class="fork-overlay__buttons fork-overlay__buttons--grid" id="forkChoiceButtons"></div>
+      </div>
     </div>
   </div>
 

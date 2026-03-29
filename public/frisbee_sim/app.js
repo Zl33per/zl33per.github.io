@@ -46,9 +46,21 @@
   const playStart = document.getElementById("playStart");
   const playSpeedSlider = document.getElementById("playSpeedSlider");
   const playSpeedLabel = document.getElementById("playSpeedLabel");
+  const playPathHint = document.getElementById("playPathHint");
+
+  // btnExitForkUp is kept in HTML but hidden via JS - we no longer use it
+  const btnExitForkUp = document.getElementById("btnExitForkUp");
+  const btnPausePlay = document.getElementById("btnPausePlay");
+  const btnRewindOne = document.getElementById("btnRewindOne");
 
   const forkOverlay = document.getElementById("forkOverlay");
+  const forkBadge = document.getElementById("forkBadge");
+  const forkQuestion = document.getElementById("forkQuestion");
+  const forkOptionsHint = document.getElementById("forkOptionsHint");
   const forkChoiceButtons = document.getElementById("forkChoiceButtons");
+
+  // Hide the "exit fork up" button - functionality is now automatic
+  if (btnExitForkUp) btnExitForkUp.hidden = true;
 
   const discSvg =
     '<svg class="disc-icon" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#fff" stroke="#c7c7cc" stroke-width="1.2"/><path d="M8 16c2.5-4 13.5-4 16 0-2.5 4-13.5 4-16 0z" fill="none" stroke="#ff9500" stroke-width="1.4"/><ellipse cx="16" cy="16" rx="10" ry="4" fill="none" stroke="#34c759" stroke-width="1"/></svg>';
@@ -61,11 +73,16 @@
   let currentNode = null;
   let lastTacticTree = null;
   let currentTacticName = "";
+  // Track whether the current lastTacticTree has been saved
+  let tacticSaved = false;
 
   let playing = false;
+  let playFinished = false; // true after playback ends naturally (not stopped)
   let playAbort = null;
   let playStepModeActive = false;
   let playPathQueue = [];
+  let playbackPaused = false;
+  let activeScrub = null;
 
   function createNode(parent) {
     return {
@@ -74,6 +91,7 @@
       branches: Object.create(null),
       nextBranchId: 1,
       parent: parent || null,
+      hasMoved: false,
     };
   }
 
@@ -84,6 +102,7 @@
       branches: {},
       nextBranchId: n.nextBranchId,
       parent: null,
+      hasMoved: n.hasMoved || false,
     };
   }
 
@@ -94,6 +113,31 @@
       c.branches[k] = deepCloneTree(node.branches[k], c);
     }
     return c;
+  }
+
+  function findNearestAncestorFork(node) {
+    while (node) {
+      if (node.forkIndex != null) return node;
+      node = node.parent;
+    }
+    return null;
+  }
+
+  function findBranchKey(host, child) {
+    if (!host || !host.branches) return null;
+    return Object.keys(host.branches).find((key) => host.branches[key] === child) || null;
+  }
+
+  function isBranchFreshEmpty(node) {
+    return node && node.frames && node.frames.length > 0 && !node.hasMoved;
+  }
+
+  function recordActiveScrubFrame(frame) {
+    if (!activeScrub || !activeScrub.timeline) return;
+    activeScrub.timeline.push(JSON.parse(JSON.stringify(frame)));
+    activeScrub.displayIdx = activeScrub.timeline.length - 1;
+    activeScrub.nextIdx = activeScrub.displayIdx + 1;
+    if (activeScrub.timeline.length === 1) updatePlaybackControls();
   }
 
   function serializeTree(node) {
@@ -270,12 +314,103 @@
     return null;
   }
 
+  function buildTimelineFromPath(root, pathDigits) {
+    const out = [];
+    let n = root;
+    let qi = 0;
+    const path = pathDigits || [];
+    if (!n || !n.frames.length) return { ok: false, error: "战术为空", timeline: [] };
+    while (n) {
+      if (n.forkIndex == null) {
+        for (const f of n.frames) out.push(JSON.parse(JSON.stringify(f)));
+        if (qi < path.length) {
+          return { ok: false, error: "路径过长：按该路径已无更多分叉", timeline: [] };
+        }
+        return { ok: true, timeline: out };
+      }
+      const head = n.frames.slice(0, n.forkIndex + 1);
+      for (const f of head) out.push(JSON.parse(JSON.stringify(f)));
+      const c = path[qi];
+      if (c == null) {
+        return {
+          ok: false,
+          error: `路径不足：此处起至少还需 ${qi + 1} 段数字（当前第 ${qi + 1} 个分叉）`,
+          timeline: [],
+        };
+      }
+      const keys = Object.keys(n.branches).map(Number);
+      if (!keys.includes(c)) {
+        const opts = keys.sort((a, b) => a - b).join("、");
+        return {
+          ok: false,
+          error: `第 ${qi + 1} 个分叉处不存在分支 ${c}，可选：${opts}`,
+          timeline: [],
+        };
+      }
+      n = n.branches[String(c)];
+      if (!n || !n.frames.length) {
+        return { ok: false, error: `分支 ${c} 无有效片段`, timeline: [] };
+      }
+      qi++;
+    }
+    return { ok: false, error: "路径与战术树不匹配", timeline: [] };
+  }
+
+  function updatePlayPathHint() {
+    if (!playPathHint) return;
+    if (!lastTacticTree || !lastTacticTree.frames.length) {
+      playPathHint.textContent = "";
+      return;
+    }
+    const segments = parsePath(playPathInput.value);
+    const lines = [];
+    let node = lastTacticTree;
+    let si = 0;
+    while (node && node.forkIndex != null && Object.keys(node.branches).length) {
+      const keys = Object.keys(node.branches)
+        .map(Number)
+        .sort((a, b) => a - b);
+      const minK = keys[0];
+      const maxK = keys[keys.length - 1];
+      const nth = si + 1;
+      const chosen = segments[si];
+      let line = `第${nth}个分叉：编号 ${minK}～${maxK}（共 ${keys.length} 条）`;
+      if (chosen != null) {
+        line += keys.includes(chosen)
+          ? `，已按 ${chosen} 继续推演`
+          : ` — 警告：「${chosen}」不在可选范围内`;
+      }
+      lines.push(line);
+      if (chosen == null || !keys.includes(chosen)) break;
+      node = node.branches[String(chosen)];
+      si++;
+    }
+    if (!lines.length) {
+      playPathHint.textContent =
+        lastTacticTree.forkIndex == null
+          ? "本战术无分叉，可不填路径。"
+          : "从第一个分叉起，将逐条显示各层允许的分支编号范围。";
+    } else {
+      playPathHint.textContent = lines.join(" ");
+    }
+    const stepOn = playStepMode && playStepMode.checked;
+    const tryBuild = buildTimelineFromPath(lastTacticTree, segments);
+    if (!stepOn && tryBuild.ok && tryBuild.timeline.length) {
+      playPathHint.textContent +=
+        " 当前设置可预演完整时间轴：播放中可暂停，并用「回退」回到先前帧。";
+    } else if (lastTacticTree.forkIndex != null && (stepOn || !tryBuild.ok)) {
+      playPathHint.textContent +=
+        " 分步或点选分叉时仅支持暂停；要可回退到任意帧，请填齐各层分支数字并取消强制分步。";
+    }
+  }
+
   function bindDrag(el) {
     let ptrId = null;
     const onMove = (e) => {
       if (e.pointerId !== ptrId || playing) return;
       const p = clientToPct(e.clientX, e.clientY);
       Object.assign(el.style, pctToStyle(p.x, p.y));
+      if (recording && currentNode) currentNode.hasMoved = true;
     };
     const onUp = (e) => {
       if (e.pointerId !== ptrId) return;
@@ -302,6 +437,19 @@
     btnImport.disabled = playing || recording;
   }
 
+  function updatePlaybackControls() {
+    if (!btnPausePlay) return;
+    // Allow pause/rewind controls when playing OR when finished (scrub still available)
+    const activeOrFinished = playing || playFinished;
+    btnPausePlay.disabled = !playing; // pause only makes sense while playing
+    const scrub = activeScrub && activeScrub.timeline && activeScrub.timeline.length;
+    // Rewind buttons: enabled when scrub data exists (even after playback ends)
+    btnRewindOne.disabled = !scrub;
+    btnPausePlay.textContent = playbackPaused ? "继续" : "暂停";
+    // Stop button: only enabled while playing
+    btnStopPlay.disabled = !playing;
+  }
+
   function setPlayingUi(on) {
     playing = on;
     entitiesLayer.querySelectorAll(".entity").forEach((el) => {
@@ -310,12 +458,17 @@
     btnRecord.disabled = on;
     btnFork.disabled = on || !recording;
     btnEndBranch.disabled = on || !recording;
-    btnSave.disabled = on || !recording;
+    btnSave.disabled = on || !lastTacticTree || !lastTacticTree.frames.length;
     addRed.disabled = on;
     removeRed.disabled = on;
     addBlue.disabled = on;
     removeBlue.disabled = on;
     btnStopPlay.disabled = !on;
+    if (!on) {
+      playbackPaused = false;
+      // Do NOT clear activeScrub here - keep it so rewind works after finish
+    }
+    updatePlaybackControls();
     updateExportImportUi();
   }
 
@@ -353,7 +506,70 @@
     currentNode.frames.push(st);
   }
 
-  function startRecording() {
+  // Ask user whether to save unsaved tactic, return promise resolving to:
+  // "save" | "discard" | "cancel"
+  function askSaveUnsaved() {
+    return new Promise((resolve) => {
+      const name = currentTacticName || "未命名战术";
+      const result = window.confirm(
+        `当前战术「${name}」尚未保存，是否保存？\n\n确定 = 保存后继续\n取消 = 不保存，直接丢弃`
+      );
+      resolve(result ? "save" : "discard");
+    });
+  }
+
+  async function startRecording() {
+    // If there's an unsaved tactic, ask user
+    const hasTactic = !!(lastTacticTree && lastTacticTree.frames && lastTacticTree.frames.length);
+    if (hasTactic && !tacticSaved) {
+      const choice = await askSaveUnsaved();
+      if (choice === "save") {
+        // Open save modal and wait for it to complete before starting recording
+        openSaveModal(true);
+        return; // recording will be started after save is confirmed/cancelled
+      }
+      // discard: clear tactic and proceed
+    }
+    doStartRecording();
+  }
+
+  // pendingRecordAfterSave flag: if true, start recording after save modal closes
+  let pendingRecordAfterSave = false;
+
+  function openSaveModal(pendingRecord) {
+    if (!lastTacticTree || !lastTacticTree.frames.length) return;
+    pendingRecordAfterSave = !!pendingRecord;
+    saveNameInput.value = currentTacticName || "未命名战术";
+    saveModal.hidden = false;
+    saveNameInput.focus();
+  }
+
+  function closeSaveModal() {
+    saveModal.hidden = true;
+    if (pendingRecordAfterSave) {
+      pendingRecordAfterSave = false;
+      doStartRecording();
+    }
+  }
+
+  function confirmSave() {
+    const name = (saveNameInput.value || "").trim() || "未命名战术";
+    const list = loadLibrary().filter((t) => t.name !== name);
+    list.push({
+      name,
+      savedAt: Date.now(),
+      tree: serializeTree(lastTacticTree),
+    });
+    list.sort((a, b) => b.savedAt - a.savedAt);
+    saveLibrary(list);
+    currentTacticName = name;
+    tacticSaved = true;
+    branchHint.textContent = `已保存「${name}」`;
+    updateExportImportUi();
+    closeSaveModal();
+  }
+
+  function doStartRecording() {
     ensureDisc();
     if (!redNumbers.length && !blueNumbers.length) {
       addPlayer("red");
@@ -361,11 +577,22 @@
     } else {
       ensureDisc();
     }
+    // Clear any previous tactic state
+    lastTacticTree = null;
+    tacticSaved = false;
+    playFinished = false;
+    activeScrub = null;
+    btnPlay.disabled = true;
+
     recording = true;
     rootNode = createNode(null);
     currentNode = rootNode;
     recDot.classList.add("on");
     btnRecord.textContent = "停止录制";
+    btnRecord.innerHTML = '<span class="rec-dot on" id="recDot"></span>停止录制';
+    // Re-grab recDot reference since we replaced innerHTML
+    const newRecDot = document.getElementById("recDot");
+
     btnFork.disabled = false;
     btnEndBranch.disabled = true;
     btnSave.disabled = false;
@@ -373,12 +600,17 @@
     tickRecord();
     updateStatus();
     updateBranchHint();
+    updatePlaybackControls();
+    updateExportImportUi();
   }
 
   function stopRecording() {
     recording = false;
-    recDot.classList.remove("on");
+    const rd = document.getElementById("recDot");
+    if (rd) rd.classList.remove("on");
     btnRecord.textContent = "录制";
+    btnRecord.innerHTML = '<span class="rec-dot" id="recDot"></span>录制';
+
     btnFork.disabled = true;
     btnEndBranch.disabled = true;
     if (recordTimer) {
@@ -386,6 +618,7 @@
       recordTimer = null;
     }
     lastTacticTree = deepCloneTree(rootNode, null);
+    tacticSaved = false;
     btnPlay.disabled = !lastTacticTree || !lastTacticTree.frames.length;
     currentTacticName = "";
     updateStatus();
@@ -393,6 +626,7 @@
       ? "录制已停止，可保存或播放"
       : "";
     updateExportImportUi();
+    updatePlaybackControls();
   }
 
   function onFork() {
@@ -411,21 +645,71 @@
     updateBranchHint();
   }
 
+  /**
+   * End current branch and automatically move up to the nearest ancestor
+   * that still has an open fork (i.e., the parent fork node), creating a
+   * new sibling branch there.
+   *
+   * Behavior:
+   * - If current node is a child of a fork node (parent.forkIndex != null),
+   *   create a new sibling branch under the same parent (same as before).
+   * - If the current node IS a fork node (it has been forked itself and we
+   *   called "结束该分叉" while sitting at a child), we walk up the parent
+   *   chain to find the nearest ancestor fork, and create a new branch there.
+   *   This means: ending a sub-fork automatically pops up to the parent fork.
+   */
   function onEndBranch() {
     if (!recording || playing) return;
+
     const parent = currentNode.parent;
     if (!parent || parent.forkIndex == null) {
       branchHint.textContent = "当前不在分支上，无法结束分叉";
       return;
     }
-    const bid = parent.nextBranchId++;
-    const sibling = createNode(parent);
-    parent.branches[String(bid)] = sibling;
+
+    const forkHost = parent;
+
+    // If the current branch has not been changed since it was created,
+    // treat this as an intent to exit the current fork and move up one level.
+    if (isBranchFreshEmpty(currentNode)) {
+      const branchKey = findBranchKey(forkHost, currentNode);
+      if (branchKey != null) delete forkHost.branches[branchKey];
+      if (!Object.keys(forkHost.branches).length) {
+        forkHost.forkIndex = null;
+        forkHost.nextBranchId = 1;
+      }
+      const upperForkHost = findNearestAncestorFork(forkHost.parent);
+      if (!upperForkHost) {
+        branchHint.textContent = "已到最外层分叉，无法继续结束父分叉";
+        return;
+      }
+      const bid = upperForkHost.nextBranchId++;
+      const sibling = createNode(upperForkHost);
+      upperForkHost.branches[String(bid)] = sibling;
+      currentNode = sibling;
+      const snap = upperForkHost.frames[upperForkHost.forkIndex];
+      if (snap) applyState(snap);
+      tickRecord();
+      branchHint.textContent = `已结束父分叉，开始录制第 ${bid} 条分支`;
+      updateBranchHint();
+      return;
+    }
+
+    const bid = forkHost.nextBranchId++;
+    const sibling = createNode(forkHost);
+    forkHost.branches[String(bid)] = sibling;
     currentNode = sibling;
-    const snap = parent.frames[parent.forkIndex];
+    const snap = forkHost.frames[forkHost.forkIndex];
     if (snap) applyState(snap);
     tickRecord();
-    branchHint.textContent = `已结束上一分支，开始录制第 ${bid} 条分支`;
+
+    const grandparent = forkHost.parent;
+    const isNested = grandparent && grandparent.forkIndex != null;
+    if (isNested) {
+      branchHint.textContent = `已结束子分叉，回到上层：开始录制第 ${bid} 条分支（再次点击"结束该分叉"可继续向上层）`;
+    } else {
+      branchHint.textContent = `已结束上一分支，开始录制第 ${bid} 条分支`;
+    }
     updateBranchHint();
   }
 
@@ -440,33 +724,6 @@
 
   function saveLibrary(list) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  }
-
-  function openSaveModal() {
-    if (!lastTacticTree || !lastTacticTree.frames.length) return;
-    saveNameInput.value = currentTacticName || "未命名战术";
-    saveModal.hidden = false;
-    saveNameInput.focus();
-  }
-
-  function closeSaveModal() {
-    saveModal.hidden = true;
-  }
-
-  function confirmSave() {
-    const name = (saveNameInput.value || "").trim() || "未命名战术";
-    const list = loadLibrary().filter((t) => t.name !== name);
-    list.push({
-      name,
-      savedAt: Date.now(),
-      tree: serializeTree(lastTacticTree),
-    });
-    list.sort((a, b) => b.savedAt - a.savedAt);
-    saveLibrary(list);
-    currentTacticName = name;
-    closeSaveModal();
-    branchHint.textContent = `已保存「${name}」`;
-    updateExportImportUi();
   }
 
   function exportTacticJson() {
@@ -492,6 +749,7 @@
     const treeData = data.tree;
     lastTacticTree = deserializeTree(treeData, null);
     currentTacticName = (data.name && String(data.name).trim()) || "导入的战术";
+    tacticSaved = true; // imported = treat as saved
     btnPlay.disabled = !lastTacticTree.frames.length;
     const first = firstFrameOfTree(lastTacticTree);
     if (first) rebuildEntitiesFromState(first);
@@ -564,6 +822,7 @@
         libraryPanel.hidden = true;
         lastTacticTree = deserializeTree(item.tree, null);
         currentTacticName = item.name;
+        tacticSaved = true;
         btnPlay.disabled = false;
         updateExportImportUi();
         openPlayModal();
@@ -588,6 +847,7 @@
     playStepMode.checked = false;
     loadPlaybackSpeedPreference();
     playModal.hidden = false;
+    updatePlayPathHint();
   }
 
   function closePlayModal() {
@@ -619,54 +879,97 @@
     });
   }
 
-  async function animateFrames(frames, signal, frameMs) {
+  async function animateFrames(frames, signal, frameMs, recordScrub = false) {
     const ms = frameMs != null && frameMs > 0 ? frameMs : SAMPLE_MS;
     if (!frames.length) return;
+    if (recordScrub) recordActiveScrubFrame(frames[0]);
     applyState(frames[0]);
     for (let i = 1; i < frames.length; i++) {
+      while (playbackPaused) await sleep(80, signal);
+      if (signal.aborted) return;
       await sleep(ms, signal);
       if (signal.aborted) return;
+      while (playbackPaused) await sleep(80, signal);
+      if (signal.aborted) return;
       applyState(frames[i]);
+      if (recordScrub) recordActiveScrubFrame(frames[i]);
     }
   }
 
-  async function playNodeDepthFirst(node, pathQueue, signal, frameMs) {
+  async function playTimelineWithScrub(scrub, signal, frameMs) {
+    const tl = scrub.timeline;
+    if (!tl.length) return;
+    scrub.displayIdx = 0;
+    scrub.nextIdx = 1;
+    applyState(tl[0]);
+    while (scrub.nextIdx < tl.length) {
+      while (playbackPaused) await sleep(80, signal);
+      if (signal.aborted) return;
+      await sleep(frameMs, signal);
+      if (signal.aborted) return;
+      while (playbackPaused) await sleep(80, signal);
+      if (signal.aborted) return;
+      applyState(tl[scrub.nextIdx]);
+      scrub.displayIdx = scrub.nextIdx;
+      scrub.nextIdx++;
+    }
+    // Playback reached the end naturally - mark as finished but keep scrub
+    scrub.displayIdx = tl.length - 1;
+  }
+
+  async function playNodeDepthFirst(node, pathQueue, signal, frameMs, ctx) {
+    if (!ctx) ctx = { forkIndex: 0 };
     if (!node || !node.frames.length) return;
     const fi = node.forkIndex;
     if (fi == null) {
-      await animateFrames(node.frames, signal, frameMs);
+      await animateFrames(node.frames, signal, frameMs, true);
       return;
     }
     const head = node.frames.slice(0, fi + 1);
-    await animateFrames(head, signal, frameMs);
+    await animateFrames(head, signal, frameMs, true);
     if (signal.aborted) return;
     const keys = Object.keys(node.branches).map(Number).sort((a, b) => a - b);
     if (!keys.length) return;
+    ctx.forkIndex += 1;
+    const forkNum = ctx.forkIndex;
     let choice;
     if (playStepModeActive) {
-      choice = await waitForkChoice(keys, signal);
-    } else {
-      choice = pathQueue.length ? pathQueue.shift() : keys[0];
+      choice = await waitForkChoice(keys, signal, forkNum);
+    } else if (pathQueue.length > 0) {
+      choice = pathQueue.shift();
       if (!keys.includes(choice)) choice = keys[0];
+    } else {
+      // 默认连续播放时，自动选择第 1 条分支
+      choice = keys[0];
     }
     const next = node.branches[String(choice)];
-    if (next) await playNodeDepthFirst(next, pathQueue, signal, frameMs);
+    if (next) await playNodeDepthFirst(next, pathQueue, signal, frameMs, ctx);
   }
 
-  function waitForkChoice(keys, signal) {
+  function waitForkChoice(keys, signal, forkNumber) {
     return new Promise((resolve, reject) => {
       if (signal.aborted) return reject(new DOMException("aborted", "AbortError"));
       forkOverlay.hidden = false;
+      if (forkBadge) forkBadge.textContent = `第 ${forkNumber} 个分叉`;
+      if (forkQuestion) forkQuestion.textContent = "请选择要走哪一条分支？";
+      if (forkOptionsHint) {
+        forkOptionsHint.textContent =
+          keys.length > 1
+            ? `本处共有 ${keys.length} 条分支，可选编号：${keys.join("、")}`
+            : `本处仅有 1 条分支`;
+      }
       forkChoiceButtons.innerHTML = "";
       const clean = () => {
         forkOverlay.hidden = true;
         forkChoiceButtons.innerHTML = "";
+        if (forkOptionsHint) forkOptionsHint.textContent = "";
       };
       keys.forEach((k) => {
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "btn btn--primary";
-        b.textContent = String(k);
+        b.className = "fork-choice-btn";
+        b.setAttribute("aria-label", `选择分支 ${k}`);
+        b.innerHTML = `<span class="fork-choice-btn__num">${k}</span><span class="fork-choice-btn__label">分支 ${k}</span>`;
         b.addEventListener("click", () => {
           clean();
           resolve(k);
@@ -683,52 +986,145 @@
 
   async function runPlayback() {
     if (!lastTacticTree) return;
+    const pathDigits = parsePath(playPathInput.value);
+    const step = playStepMode.checked;
+    let useTimeline = false;
+    let timeline = null;
+    if (!step) {
+      if (pathDigits.length > 0) {
+        const built = buildTimelineFromPath(lastTacticTree, pathDigits);
+        if (!built.ok) {
+          window.alert(built.error);
+          return;
+        }
+        timeline = built.timeline;
+        useTimeline = timeline.length > 0;
+      } else {
+        const built0 = buildTimelineFromPath(lastTacticTree, []);
+        if (built0.ok && built0.timeline.length) {
+          timeline = built0.timeline;
+          useTimeline = true;
+        }
+      }
+    }
     const first = firstFrameOfTree(lastTacticTree);
     if (first) rebuildEntitiesFromState(first);
     const ac = new AbortController();
     playAbort = ac;
-    setPlayingUi(true);
+    playbackPaused = false;
+    playFinished = false;
+    // Prepare scrub timeline for playback
+    activeScrub = null;
     closePlayModal();
+    setPlayingUi(true);
     updateStatus();
-    playStepModeActive = playStepMode.checked;
-    playPathQueue = parsePath(playPathInput.value);
+    playStepModeActive = step;
+    playPathQueue = pathDigits.slice();
     const speed = parseFloat(playSpeedSlider.value);
     const sp = Number.isFinite(speed) && speed > 0 ? speed : 1;
     const frameMs = SAMPLE_MS / sp;
     try {
-      await playNodeDepthFirst(lastTacticTree, playPathQueue, ac.signal, frameMs);
+      if (useTimeline && timeline) {
+        activeScrub = { timeline };
+        updatePlaybackControls();
+        await playTimelineWithScrub(activeScrub, ac.signal, frameMs);
+      } else {
+        activeScrub = { timeline: [], displayIdx: 0, nextIdx: 1 };
+        updatePlaybackControls();
+        await playNodeDepthFirst(lastTacticTree, playPathQueue, ac.signal, frameMs, {
+          forkIndex: 0,
+        });
+      }
     } catch (e) {
       if (e.name !== "AbortError") console.error(e);
     }
+    // Determine if we finished naturally vs. were stopped
+    const wasAborted = ac.signal.aborted;
+    playbackPaused = false;
     setPlayingUi(false);
-    branchHint.textContent = currentTacticName ? `战术「${currentTacticName}」播放结束` : "播放结束";
+
+    if (!wasAborted && activeScrub && activeScrub.timeline) {
+      // Natural finish: keep scrub so rewind buttons remain usable
+      playFinished = true;
+      branchHint.textContent = currentTacticName
+        ? `战术「${currentTacticName}」播放结束 · 可使用回退按钮回看`
+        : "播放结束 · 可使用回退按钮回看";
+    } else {
+      // Stopped manually: clear scrub
+      activeScrub = null;
+      playFinished = false;
+      branchHint.textContent = currentTacticName ? `战术「${currentTacticName}」已停止` : "已停止";
+    }
     updateStatus();
     playAbort = null;
+    updatePlaybackControls();
   }
 
   function stopPlayback() {
     if (playAbort) playAbort.abort();
     forkOverlay.hidden = true;
+    activeScrub = null;
+    playFinished = false;
+    playbackPaused = false;
+    updatePlaybackControls();
   }
+
+  // ---- Event listeners ----
 
   btnRecord.addEventListener("click", () => {
     if (playing) return;
-    if (recording) stopRecording();
-    else startRecording();
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
   });
 
   btnFork.addEventListener("click", onFork);
   btnEndBranch.addEventListener("click", onEndBranch);
+
+  // btnExitForkUp is hidden; keep listener harmless
+  if (btnExitForkUp) btnExitForkUp.addEventListener("click", () => {});
+
+  btnPausePlay.addEventListener("click", () => {
+    if (!playing) return;
+    playbackPaused = !playbackPaused;
+    updatePlaybackControls();
+  });
+
+  btnRewindOne.addEventListener("click", () => {
+    if (!activeScrub || !activeScrub.timeline) return;
+    if (activeScrub.displayIdx === undefined) activeScrub.displayIdx = activeScrub.timeline.length - 1;
+    // Pause if currently playing
+    if (playing) playbackPaused = true;
+    if (activeScrub.displayIdx <= 0) return;
+    activeScrub.displayIdx -= 1;
+    activeScrub.nextIdx = activeScrub.displayIdx + 1;
+    applyState(activeScrub.timeline[activeScrub.displayIdx]);
+    updatePlaybackControls();
+  });
+
+  playPathInput.addEventListener("input", updatePlayPathHint);
+  playStepMode.addEventListener("change", updatePlayPathHint);
 
   btnSave.addEventListener("click", () => {
     if (recording) {
       branchHint.textContent = "请先停止录制再保存";
       return;
     }
-    openSaveModal();
+    openSaveModal(false);
   });
 
-  saveCancel.addEventListener("click", closeSaveModal);
+  saveCancel.addEventListener("click", () => {
+    if (pendingRecordAfterSave) {
+      // User cancelled save dialog that appeared before recording — discard tactic and start fresh
+      pendingRecordAfterSave = false;
+      saveModal.hidden = true;
+      doStartRecording();
+    } else {
+      closeSaveModal();
+    }
+  });
   saveConfirm.addEventListener("click", confirmSave);
 
   btnExport.addEventListener("click", () => exportTacticJson());
@@ -772,7 +1168,15 @@
 
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      if (!saveModal.hidden) closeSaveModal();
+      if (!saveModal.hidden) {
+        if (pendingRecordAfterSave) {
+          pendingRecordAfterSave = false;
+          saveModal.hidden = true;
+          doStartRecording();
+        } else {
+          closeSaveModal();
+        }
+      }
       if (!playModal.hidden) closePlayModal();
       if (!libraryPanel.hidden) libraryPanel.hidden = true;
     }
@@ -783,4 +1187,5 @@
   btnPlay.disabled = true;
   loadPlaybackSpeedPreference();
   updateExportImportUi();
+  updatePlaybackControls();
 })();

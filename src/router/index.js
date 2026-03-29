@@ -1,4 +1,5 @@
-import { createRouter, createWebHistory } from 'vue-router'
+// 1. 引入 createWebHashHistory 而不是 createWebHistory
+import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   {
@@ -29,7 +30,8 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 2. 将 history 修改为 Hash 模式
+  history: createWebHashHistory(),
   routes
 })
 
