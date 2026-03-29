@@ -171,7 +171,14 @@ const particlesOptions = {
             <span class="site-name-v2">Zleeper</span>
             </div>
             <nav class="nav-links-v2">
-            <a v-for="link in page2Links" :key="link.name" :href="link.path">{{ link.name }}</a>
+            <a 
+              v-for="link in page2Links" 
+              :key="link.name" 
+              @click.prevent="router.push(link.path)"
+              class="cursor-pointer"
+            >
+              {{ link.name }}
+            </a>
             </nav>
         </header>
 
