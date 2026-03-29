@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>飞盘战术设计</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<a href="/sports" class="back-to-sports-btn" title="回到运动中心">
+  <span class="icon">🏃</span>
+  <span class="text">返回中心</span>
+</a>
+<body>
+  <div class="app">
+    <header class="top-bar">
+      <div class="top-bar__title">
+        <h1>飞盘战术</h1>
+        <p class="subtitle" id="statusText">编辑模式</p>
+      </div>
+      <div class="top-bar__actions top-bar__actions--row">
+        <button type="button" class="btn btn--secondary btn--compact" id="btnExport" disabled title="导出当前战术为 JSON">导出</button>
+        <button type="button" class="btn btn--secondary btn--compact" id="btnImport" title="从 JSON 文件导入">导入</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden />
+        <button type="button" class="btn btn--secondary" id="btnLibrary">战术库</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="field-wrap">
+        <div class="field" id="field" aria-label="场地">
+          <div class="field__line field__line--center"></div>
+          <div class="field__endzone field__endzone--left"></div>
+          <div class="field__endzone field__endzone--right"></div>
+          <div id="entitiesLayer" class="entities"></div>
+        </div>
+      </div>
+    </main>
+
+    <div class="side-panel" id="libraryPanel" hidden>
+      <div class="side-panel__backdrop" id="libraryBackdrop"></div>
+      <div class="side-panel__sheet">
+        <div class="sheet__grab"></div>
+        <h2 class="sheet__title">战术库</h2>
+        <ul class="tactic-list" id="tacticList"></ul>
+        <p class="hint empty-hint" id="libraryEmpty">暂无保存的战术</p>
+      </div>
+    </div>
+
+    <div class="modal" id="saveModal" hidden>
+      <div class="modal__backdrop"></div>
+      <div class="modal__card">
+        <h3>保存战术</h3>
+        <input type="text" id="saveNameInput" class="text-input" placeholder="战术名称" maxlength="64" />
+        <div class="modal__actions">
+          <button type="button" class="btn btn--secondary" id="saveCancel">取消</button>
+          <button type="button" class="btn btn--primary" id="saveConfirm">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="playModal" hidden>
+      <div class="modal__backdrop"></div>
+      <div class="modal__card">
+        <h3>播放设置</h3>
+        <label class="label">分叉路径（如 1.2.1 表示在各分叉点依次选第 1、2、1 条分支）</label>
+        <input type="text" id="playPathInput" class="text-input" placeholder="留空则使用分步选择" />
+        <label class="checkbox-row">
+          <input type="checkbox" id="playStepMode" />
+          <span>分步模式（每到分叉暂停，手动选分支）</span>
+        </label>
+        <div class="speed-row">
+          <label class="label" for="playSpeedSlider">回放速度 <span class="speed-value" id="playSpeedLabel">1.0×</span></label>
+          <input type="range" id="playSpeedSlider" class="range-input" min="0.25" max="2.5" step="0.05" value="1" />
+          <p class="speed-hint">向左变慢，向右变快（相对录制采样间隔）</p>
+        </div>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--secondary" id="playCancel">取消</button>
+          <button type="button" class="btn btn--primary" id="playStart">播放</button>
+        </div>
+      </div>
+    </div>
+
+    <nav class="dock">
+      <div class="dock__inner glass">
+        <div class="dock__row dock__row--teams">
+          <span class="dock__label">红队</span>
+          <button type="button" class="btn btn--pill btn--red" id="addRed" title="增加队员">+</button>
+          <button type="button" class="btn btn--pill btn--red-outline" id="removeRed" title="减少队员">−</button>
+          <span class="dock__divider"></span>
+          <span class="dock__label">蓝队</span>
+          <button type="button" class="btn btn--pill btn--blue" id="addBlue">+</button>
+          <button type="button" class="btn btn--pill btn--blue-outline" id="removeBlue">−</button>
+        </div>
+        <div class="dock__row dock__row--record">
+          <button type="button" class="btn btn--primary" id="btnRecord">
+            <span class="rec-dot" id="recDot"></span>
+            录制
+          </button>
+          <button type="button" class="btn btn--secondary" id="btnFork" disabled>增加分叉</button>
+          <button type="button" class="btn btn--secondary" id="btnEndBranch" disabled>结束该分叉</button>
+          <button type="button" class="btn btn--secondary" id="btnSave" disabled>保存战术</button>
+        </div>
+        <div class="dock__row dock__row--play" id="playDockRow">
+          <button type="button" class="btn btn--secondary" id="btnPlay" disabled>播放</button>
+          <button type="button" class="btn btn--ghost" id="btnStopPlay" disabled>停止播放</button>
+        </div>
+        <p class="dock__hint" id="branchHint"></p>
+      </div>
+    </nav>
+
+    <div class="fork-overlay" id="forkOverlay" hidden>
+      <p class="fork-overlay__title">选择分支继续播放</p>
+      <div class="fork-overlay__buttons" id="forkChoiceButtons"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

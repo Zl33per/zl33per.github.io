@@ -1,6 +1,7 @@
 <template>
-  <div>
-    <h1>文章列表</h1>
-    <p>正在建设中...</p>
+  <div class="p-8">
+    <h1 class="text-2xl font-bold">随笔板块</h1>
+    <p>暂未开放...</p>
+    <button @click="$router.back()" class="mt-4 text-blue-500">返回首页</button>
   </div>
 </template>

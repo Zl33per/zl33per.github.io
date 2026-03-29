@@ -31,21 +31,21 @@ const sectionCards = [
     title: '学习',
     path: '/learning',
     icon: 'mdi:book-open-variant',
-    desc: '前端开发与前沿技术探索',
+    desc: '学习笔记与技术探索',
     topPosts: [
-      { title: 'Vue3 响应式原理深度解析' },
-      { title: 'Vite 性能优化指南' },
-      { title: 'TypeScript 高级技巧分享' }
+      { title: '数据结构与算法' },
+      { title: '计算机硬件' },
+      { title: 'EECS498学习' }
     ]
   },
   {
     title: '音乐',
     path: '/music',
     icon: 'mdi:music',
-    desc: '音律空间与个性化歌单',
+    desc: '音乐学习与个性化歌单',
     topPosts: [
-      { title: '最近在听：后摇的力量' },
-      { title: '氛围音乐制作尝试' }
+      { title: '练琴记录' },
+      { title: '乐理学习笔记' }
     ]
   },
   {
@@ -54,18 +54,18 @@ const sectionCards = [
     icon: 'mdi:pencil-outline',
     desc: '灵感片段与生活随感',
     topPosts: [
-      { title: '杭州的秋天与代码的秋天' },
-      { title: '数字花园的构建思考' }
+      { title: '书单' },
+      { title: '练字一路楼' }
     ]
   },
   {
     title: '运动',
     path: '/sports',
     icon: 'mdi:run',
-    desc: '力量训练与运动日志',
+    desc: '健身与运动日志',
     topPosts: [
-      { title: '深蹲 140kg 的突破之路' },
-      { title: '复合动作训练周计划' }
+      { title: '飞盘战术模拟器' },
+      { title: '运动计划' }
     ]
   }
 ]
